@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
   <!-- Header -->
@@ -128,9 +128,19 @@
             <label for="endDate">완료일</label>
             <input type="date" id="endDate">
           </div>
-          <div class="input-group">
+          <div class="input-group design-name-group">
             <label for="designName">디자인 이름</label>
-            <input type="text" id="designName" required placeholder="예: 18K 골드 워치">
+            <div class="input-with-icon">
+              <input type="text" id="designName" required placeholder="예: 18K 골드 워치">
+              <label for="designPhoto" class="camera-btn" title="사진 추가">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-camera"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+              </label>
+              <input type="file" id="designPhoto" accept="image/*" capture="environment" style="display: none;">
+            </div>
+            <div id="photoPreview" class="photo-preview hidden">
+              <img id="previewImg" src="" alt="미리보기">
+              <button type="button" id="removePhotoBtn" class="remove-photo-btn">×</button>
+            </div>
           </div>
           <div class="input-group">
             <label for="goldType">금 재질</label>
@@ -207,6 +217,7 @@
         <table class="data-table">
           <thead>
             <tr>
+              <th>사진</th>
               <th>디자인 이름</th>
               <th>일정 (등록/완료)</th>
               <th>금 재질</th>
@@ -316,6 +327,7 @@
         <table class="data-table">
           <thead>
             <tr>
+              <th>사진</th>
               <th>디자인 이름</th>
               <th>일정 (등록/완료)</th>
               <th>금 재질</th>
@@ -338,6 +350,12 @@
   </div>
 </main>
   
-  <script src="app.js"></script>
+  <script src="app.js?v=2"></script>
+
+  <!-- Image Modal -->
+  <div id="imageModal" class="image-modal hidden">
+    <span class="close-modal">&times;</span>
+    <img class="modal-content" id="fullImage">
+  </div>
 </body>
 </html>

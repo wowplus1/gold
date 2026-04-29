@@ -1,55 +1,4 @@
-// Sample Data Generator
-const generateMockData = () => {
-  const data = [];
-  let idCounter = 1;
-  const types = ["18K", "14K", "순금"];
-  const prefixes = ["커플링", "목걸이", "팔찌", "귀걸이", "펜던트", "반지", "브로치", "티아라"];
-  const months = [2, 3, 4];
-  
-  months.forEach(month => {
-    for(let i=0; i<100; i++) {
-      const gType = types[Math.floor(Math.random() * types.length)];
-      const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
-      
-      // Randomize weights
-      const expW = parseFloat((Math.random() * 80 + 10).toFixed(2));
-      const iniW = parseFloat((expW + (Math.random() * 2 - 1)).toFixed(2));
-      const cstW = parseFloat((iniW * (1 - Math.random() * 0.03)).toFixed(2));
-      const crfW = parseFloat((cstW * (1 - Math.random() * 0.02)).toFixed(2));
-      const finW = parseFloat((crfW * (1 - Math.random() * 0.01)).toFixed(2));
-      
-      // Randomize dates (Feb, Mar, Apr 2026)
-      const day = Math.floor(Math.random() * 28) + 1;
-      const startD = `2026-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      
-      const endDay = day + Math.floor(Math.random() * 5) + 1;
-      let endMonth = month;
-      let actualEndDay = endDay;
-      if (actualEndDay > 28) {
-        actualEndDay -= 28;
-        endMonth++;
-      }
-      const endD = `2026-${String(endMonth).padStart(2, '0')}-${String(actualEndDay).padStart(2, '0')}`;
-
-      data.push({
-        id: idCounter++,
-        name: `${month}월 ${prefix} 디자인-${i+1}`,
-        goldType: gType,
-        expectedWeight: expW,
-        initialWeight: iniW,
-        casting: cstW,
-        crafting: crfW,
-        final: finW,
-        startDate: startD,
-        endDate: endD,
-        timestamp: new Date(startD).toISOString()
-      });
-    }
-  });
-  
-  // Sort descending by date
-  return data.sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
-};
+// Mock data generator removed to ensure real data usage
 
 // Backend Server Support
 const API_URL = 'https://script.google.com/macros/s/AKfycbwRa6_lGuqrUS6i8j8Ksrpe1afRpk5ILpAAfzt9Ro_rbLM-FBV11HkjcwpeULtlKJIYGg/exec';
@@ -62,13 +11,12 @@ const loadData = async () => {
     if (data && data.length > 0) {
       ledgerData = data;
     } else {
-      ledgerData = generateMockData();
-      saveData(); // Save mock data to backend initially
+      ledgerData = [];
     }
     renderMainData();
   } catch (error) {
-    console.error('Server is not running. Falling back to local/mock.', error);
-    ledgerData = generateMockData();
+    console.error('Failed to load from server.', error);
+    ledgerData = [];
     renderMainData();
   }
 };
@@ -76,9 +24,12 @@ const loadData = async () => {
 const saveData = async () => {
   try {
     // Send data to Google Sheets via POST action=bulk
-    // For large arrays, sending via JSON body in POST is required
+    // Using text/plain is required to bypass CORS preflight with Google Apps Script
     await fetch(`${API_URL}?action=bulk`, {
       method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8'
+      },
       body: JSON.stringify(ledgerData)
     });
   } catch (error) {
@@ -107,8 +58,72 @@ const inputCrafting = document.getElementById('craftingWeight');
 const inputFinal = document.getElementById('polishingWeight');
 
 // Preview elements
-const previewLoss = document.getElementById('preview-loss');
-const previewHeri = document.getElementById('preview-heri');
+const previewLoss = document.getElementById('previewLoss');
+const previewHeri = document.getElementById('previewHeri');
+
+// Photo elements
+const inputPhoto = document.getElementById('designPhoto');
+const photoPreview = document.getElementById('photoPreview');
+const previewImg = document.getElementById('previewImg');
+const removePhotoBtn = document.getElementById('removePhotoBtn');
+const imageModal = document.getElementById('imageModal');
+const fullImage = document.getElementById('fullImage');
+const closeModal = document.querySelector('.close-modal');
+
+let currentBase64Image = null;
+let currentImageUrl = null;
+
+// Image Compression & Preview
+if (inputPhoto) {
+  inputPhoto.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 800;
+        let width = img.width;
+        let height = img.height;
+        if (width > MAX_WIDTH) {
+          height *= MAX_WIDTH / width;
+          width = MAX_WIDTH;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        currentBase64Image = canvas.toDataURL('image/jpeg', 0.8);
+        previewImg.src = currentBase64Image;
+        photoPreview.classList.remove('hidden');
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  removePhotoBtn.addEventListener('click', () => {
+    inputPhoto.value = '';
+    currentBase64Image = null;
+    currentImageUrl = null;
+    photoPreview.classList.add('hidden');
+  });
+}
+
+// Modal handling
+if (closeModal) {
+  closeModal.addEventListener('click', () => imageModal.classList.add('hidden'));
+  imageModal.addEventListener('click', (e) => {
+    if (e.target === imageModal) imageModal.classList.add('hidden');
+  });
+}
+window.openImageModal = (url) => {
+  fullImage.src = url;
+  imageModal.classList.remove('hidden');
+};
 
 // View and Pagination State
 let mainPage = 1;
@@ -184,8 +199,33 @@ const updatePreview = () => {
 });
 
 // Add or Update entry
-form.addEventListener('submit', (e) => {
+form.addEventListener('submit', async (e) => {
   e.preventDefault();
+  
+  const btn = form.querySelector('.btn-primary');
+  const originalText = btn.innerHTML;
+  btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-loader-2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> 업로드 중...`;
+  btn.disabled = true;
+
+  let finalImageUrl = currentImageUrl;
+  if (currentBase64Image) {
+    try {
+      const uploadRes = await fetch(`${API_URL}?action=uploadImage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          image: currentBase64Image,
+          filename: `photo_${Date.now()}.jpg`
+        })
+      });
+      const uploadData = await uploadRes.json();
+      if (uploadData.success) {
+        finalImageUrl = uploadData.url;
+      }
+    } catch (err) {
+      console.error('Image upload failed', err);
+    }
+  }
   
   if (editingId) {
     const index = ledgerData.findIndex(item => item.id === editingId);
@@ -201,6 +241,7 @@ form.addEventListener('submit', (e) => {
         casting: parseFloat(inputCasting.value),
         crafting: parseFloat(inputCrafting.value),
         final: parseFloat(inputFinal.value),
+        imageUrl: finalImageUrl || ''
       };
     }
     editingId = null;
@@ -220,6 +261,7 @@ form.addEventListener('submit', (e) => {
       casting: parseFloat(inputCasting.value),
       crafting: parseFloat(inputCrafting.value),
       final: parseFloat(inputFinal.value),
+      imageUrl: finalImageUrl || '',
       timestamp: new Date().toISOString()
     };
     
@@ -229,20 +271,23 @@ form.addEventListener('submit', (e) => {
   saveData();
   renderMainData();
   
-  // Reset form
+  // Reset form and photo
   form.reset();
   inputStartDate.value = new Date().toISOString().slice(0, 10);
+  inputPhoto.value = '';
+  currentBase64Image = null;
+  currentImageUrl = null;
+  photoPreview.classList.add('hidden');
   updatePreview();
   
   // Provide visual feedback
-  const btn = form.querySelector('.btn-primary');
-  const originalText = btn.innerHTML;
   btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check"><path d="M20 6 9 17l-5-5"/></svg> 완료!`;
   btn.style.backgroundColor = '#16A34A'; // Green
   
   setTimeout(() => {
     btn.innerHTML = originalText;
     btn.style.backgroundColor = '';
+    btn.disabled = false;
   }, 2000);
 });
 
@@ -269,6 +314,16 @@ const editEntry = (id) => {
   inputCasting.value = item.casting;
   inputCrafting.value = item.crafting;
   inputFinal.value = item.final;
+  
+  if (item.imageUrl) {
+    currentImageUrl = item.imageUrl;
+    previewImg.src = item.imageUrl;
+    photoPreview.classList.remove('hidden');
+  } else {
+    currentImageUrl = null;
+    previewImg.src = '';
+    photoPreview.classList.add('hidden');
+  }
   
   updatePreview();
   
@@ -334,7 +389,14 @@ const renderTableGeneric = (dataArray, tbody, currentPage, pageSize, paginationC
     const tr = document.createElement('tr');
     if (isHighLoss) tr.className = 'high-loss';
     
+    const photoContent = item.imageUrl 
+      ? `<img src="${item.imageUrl}" class="table-thumbnail" alt="사진" onclick="openImageModal('${item.imageUrl}')">` 
+      : `<span class="no-photo">없음</span>`;
+
     tr.innerHTML = `
+      <td style="text-align: center;">
+        ${photoContent}
+      </td>
       <td>
         <div style="font-weight: 500; color: var(--text-primary);">${item.name}</div>
       </td>
