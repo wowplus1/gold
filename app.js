@@ -5,25 +5,43 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbwRa6_lGuqrUS6i8j8Ksrpe
 let ledgerData = [];
 
 const loadData = async () => {
+  // 1. Show cached data immediately to eliminate loading wait time
+  const cachedData = localStorage.getItem('jewelryLedgerData');
+  if (cachedData) {
+    try {
+      ledgerData = JSON.parse(cachedData);
+      renderMainData();
+    } catch(e) {
+      console.error('Failed to parse cached data', e);
+    }
+  }
+
+  // 2. Fetch fresh data from server in the background
   try {
     const res = await fetch(API_URL);
     const data = await res.json();
     if (data && data.length > 0) {
       ledgerData = data;
+      localStorage.setItem('jewelryLedgerData', JSON.stringify(ledgerData));
     } else {
       ledgerData = [];
     }
-    renderMainData();
+    renderMainData(); // Re-render silently with up-to-date data
   } catch (error) {
     console.error('Failed to load from server.', error);
-    ledgerData = [];
-    renderMainData();
+    if (!ledgerData || ledgerData.length === 0) {
+      ledgerData = [];
+      renderMainData();
+    }
   }
 };
 
 const saveData = async () => {
   try {
-    // Send data to Google Sheets via POST action=bulk
+    // 1. Save locally instantly for fast UX
+    localStorage.setItem('jewelryLedgerData', JSON.stringify(ledgerData));
+    
+    // 2. Background sync to Google Sheets
     // Using text/plain is required to bypass CORS preflight with Google Apps Script
     await fetch(`${API_URL}?action=bulk`, {
       method: 'POST',
@@ -58,72 +76,9 @@ const inputCrafting = document.getElementById('craftingWeight');
 const inputFinal = document.getElementById('polishingWeight');
 
 // Preview elements
-const previewLoss = document.getElementById('previewLoss');
-const previewHeri = document.getElementById('previewHeri');
+const previewLoss = document.getElementById('preview-loss');
+const previewHeri = document.getElementById('preview-heri');
 
-// Photo elements
-const inputPhoto = document.getElementById('designPhoto');
-const photoPreview = document.getElementById('photoPreview');
-const previewImg = document.getElementById('previewImg');
-const removePhotoBtn = document.getElementById('removePhotoBtn');
-const imageModal = document.getElementById('imageModal');
-const fullImage = document.getElementById('fullImage');
-const closeModal = document.querySelector('.close-modal');
-
-let currentBase64Image = null;
-let currentImageUrl = null;
-
-// Image Compression & Preview
-if (inputPhoto) {
-  inputPhoto.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800;
-        let width = img.width;
-        let height = img.height;
-        if (width > MAX_WIDTH) {
-          height *= MAX_WIDTH / width;
-          width = MAX_WIDTH;
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        
-        currentBase64Image = canvas.toDataURL('image/jpeg', 0.8);
-        previewImg.src = currentBase64Image;
-        photoPreview.classList.remove('hidden');
-      };
-      img.src = event.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
-
-  removePhotoBtn.addEventListener('click', () => {
-    inputPhoto.value = '';
-    currentBase64Image = null;
-    currentImageUrl = null;
-    photoPreview.classList.add('hidden');
-  });
-}
-
-// Modal handling
-if (closeModal) {
-  closeModal.addEventListener('click', () => imageModal.classList.add('hidden'));
-  imageModal.addEventListener('click', (e) => {
-    if (e.target === imageModal) imageModal.classList.add('hidden');
-  });
-}
-window.openImageModal = (url) => {
-  fullImage.src = url;
-  imageModal.classList.remove('hidden');
-};
 
 // View and Pagination State
 let mainPage = 1;
@@ -135,6 +90,7 @@ let statsPageSize = 20;
 let filterStartDate = '';
 let filterEndDate = '';
 let filterDateType = 'startDate';
+let filterGoldTypeStats = '';
 
 // View Toggles
 const viewMain = document.getElementById('view-main');
@@ -159,6 +115,10 @@ navToggleButton.addEventListener('click', () => {
 });
 // Format helpers
 const formatNum = (num) => Number(num).toFixed(2);
+const formatDate = (dateStr) => {
+  if (!dateStr) return '';
+  return String(dateStr).split('T')[0].substring(0, 10);
+};
 
 // Calculate Loss and Heri
 const calculateMetrics = (initial, final) => {
@@ -166,6 +126,30 @@ const calculateMetrics = (initial, final) => {
   const loss = initial - final;
   const heri = (loss / initial) * 100;
   return { loss, heri };
+};
+
+let currentSortCol = null;
+let currentSortOrder = 'desc';
+
+const getSortedData = (dataArray) => {
+  if (!currentSortCol) return dataArray;
+  
+  return [...dataArray].sort((a, b) => {
+    let valA = a[currentSortCol];
+    let valB = b[currentSortCol];
+    
+    if (currentSortCol === 'loss' || currentSortCol === 'heri') {
+      valA = calculateMetrics(a.initialWeight, a.final)[currentSortCol];
+      valB = calculateMetrics(b.initialWeight, b.final)[currentSortCol];
+    }
+    
+    if (valA === undefined || valA === null) valA = '';
+    if (valB === undefined || valB === null) valB = '';
+    
+    if (valA < valB) return currentSortOrder === 'asc' ? -1 : 1;
+    if (valA > valB) return currentSortOrder === 'asc' ? 1 : -1;
+    return 0;
+  });
 };
 
 // Event Listeners for real-time preview
@@ -207,26 +191,7 @@ form.addEventListener('submit', async (e) => {
   btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-loader-2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> 업로드 중...`;
   btn.disabled = true;
 
-  let finalImageUrl = currentImageUrl;
-  if (currentBase64Image) {
-    try {
-      const uploadRes = await fetch(`${API_URL}?action=uploadImage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          image: currentBase64Image,
-          filename: `photo_${Date.now()}.jpg`
-        })
-      });
-      const uploadData = await uploadRes.json();
-      if (uploadData.success) {
-        finalImageUrl = uploadData.url;
-      }
-    } catch (err) {
-      console.error('Image upload failed', err);
-    }
-  }
-  
+
   if (editingId) {
     const index = ledgerData.findIndex(item => item.id === editingId);
     if (index !== -1) {
@@ -240,8 +205,7 @@ form.addEventListener('submit', async (e) => {
         initialWeight: parseFloat(inputInitial.value),
         casting: parseFloat(inputCasting.value),
         crafting: parseFloat(inputCrafting.value),
-        final: parseFloat(inputFinal.value),
-        imageUrl: finalImageUrl || ''
+        final: parseFloat(inputFinal.value)
       };
     }
     editingId = null;
@@ -261,7 +225,6 @@ form.addEventListener('submit', async (e) => {
       casting: parseFloat(inputCasting.value),
       crafting: parseFloat(inputCrafting.value),
       final: parseFloat(inputFinal.value),
-      imageUrl: finalImageUrl || '',
       timestamp: new Date().toISOString()
     };
     
@@ -269,15 +232,16 @@ form.addEventListener('submit', async (e) => {
   }
   
   saveData();
+  
+  resetFormLocation();
+  const cancelBtn = form.querySelector('.btn-cancel');
+  if (cancelBtn) cancelBtn.remove();
+  
   renderMainData();
   
   // Reset form and photo
   form.reset();
   inputStartDate.value = new Date().toISOString().slice(0, 10);
-  inputPhoto.value = '';
-  currentBase64Image = null;
-  currentImageUrl = null;
-  photoPreview.classList.add('hidden');
   updatePreview();
   
   // Provide visual feedback
@@ -290,6 +254,46 @@ form.addEventListener('submit', async (e) => {
     btn.disabled = false;
   }, 2000);
 });
+
+// --- Form Location Management ---
+function resetFormLocation() {
+  const formSection = document.querySelector('.form-section');
+  if (!formSection) return;
+  const originalContainer = document.getElementById('view-main');
+  const tableSection = document.querySelector('.table-section');
+  
+  if (formSection.parentNode !== originalContainer) {
+    formSection.style.margin = '';
+    formSection.style.boxShadow = '';
+    formSection.style.border = '';
+    
+    const h2 = formSection.querySelector('.panel-header h2');
+    if (h2) h2.textContent = '새 디자인 공정 입력';
+    const p = formSection.querySelector('.panel-header p');
+    if (p) p.textContent = '각 단계별 중량을 입력하면 예상 해리율이 자동 계산됩니다.';
+    
+    originalContainer.insertBefore(formSection, tableSection);
+  }
+  
+  const editRow = document.getElementById('edit-form-row');
+  if (editRow) editRow.remove();
+}
+
+function cancelEdit() {
+  editingId = null;
+  form.reset();
+  inputStartDate.value = new Date().toISOString().slice(0, 10);
+  updatePreview();
+  
+  const btn = form.querySelector('.btn-primary');
+  btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus"><path d="M5 12h14"/><path d="M12 5v14"/></svg> Add to Ledger`;
+  
+  const cancelBtn = form.querySelector('.btn-cancel');
+  if (cancelBtn) cancelBtn.remove();
+  
+  resetFormLocation();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
 
 // Edit entry
 const editEntry = (id) => {
@@ -304,9 +308,11 @@ const editEntry = (id) => {
     renderMainData(); // 메인 화면 테이블 최신화
   }
   
+  resetFormLocation();
+  
   editingId = id;
-  inputStartDate.value = item.startDate || '';
-  inputEndDate.value = item.endDate || '';
+  inputStartDate.value = formatDate(item.startDate);
+  inputEndDate.value = formatDate(item.endDate);
   inputName.value = item.name;
   inputGoldType.value = item.goldType;
   inputExpected.value = item.expectedWeight;
@@ -315,27 +321,61 @@ const editEntry = (id) => {
   inputCrafting.value = item.crafting;
   inputFinal.value = item.final;
   
-  if (item.imageUrl) {
-    currentImageUrl = item.imageUrl;
-    previewImg.src = item.imageUrl;
-    photoPreview.classList.remove('hidden');
-  } else {
-    currentImageUrl = null;
-    previewImg.src = '';
-    photoPreview.classList.add('hidden');
-  }
-  
   updatePreview();
   
   // Update button
   const btn = form.querySelector('.btn-primary');
   btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-save"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Update Ledger`;
   
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  let cancelBtn = form.querySelector('.btn-cancel');
+  if (!cancelBtn) {
+    cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn-secondary btn-cancel';
+    cancelBtn.textContent = '취소';
+    cancelBtn.onclick = cancelEdit;
+    btn.parentNode.insertBefore(cancelBtn, btn);
+  }
+  
+  const formSection = document.querySelector('.form-section');
+  const targetRow = document.querySelector(`#ledger-body tr[data-id="${id}"]`);
+  
+  if (formSection && targetRow) {
+    const editRow = document.createElement('tr');
+    editRow.id = 'edit-form-row';
+    const editCell = document.createElement('td');
+    editCell.colSpan = 10;
+    editCell.style.padding = '0';
+    editCell.style.backgroundColor = 'var(--bg-color)';
+    
+    formSection.style.margin = '1rem';
+    formSection.style.boxShadow = 'var(--shadow-md)';
+    formSection.style.border = '2px solid var(--primary-color)';
+    const h2 = formSection.querySelector('.panel-header h2');
+    if (h2) h2.textContent = '데이터 수정 중...';
+    const p = formSection.querySelector('.panel-header p');
+    if (p) p.textContent = '아래 내용을 수정 후 Update Ledger를 클릭하세요.';
+    
+    editCell.appendChild(formSection);
+    editRow.appendChild(editCell);
+    targetRow.after(editRow);
+    
+    const headerOffset = 80;
+    const elementPosition = formSection.getBoundingClientRect().top;
+    const offsetPosition = elementPosition + window.scrollY - headerOffset;
+    
+    window.scrollTo({
+      top: offsetPosition,
+      behavior: 'smooth'
+    });
+  } else {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 };
 
 // Delete entry
 const deleteEntry = (id) => {
+  if (editingId === id) cancelEdit();
   if(confirm('이 데이터를 삭제하시겠습니까?')) {
     ledgerData = ledgerData.filter(item => item.id !== id);
     saveData();
@@ -371,6 +411,7 @@ const renderPagination = (totalItems, pageSize, currentPage, container, onPageCh
 };
 
 const renderTableGeneric = (dataArray, tbody, currentPage, pageSize, paginationContainer, onPageChange) => {
+  if (typeof resetFormLocation === 'function') resetFormLocation();
   tbody.innerHTML = '';
   
   if (dataArray.length === 0) {
@@ -387,22 +428,16 @@ const renderTableGeneric = (dataArray, tbody, currentPage, pageSize, paginationC
     const isHighLoss = heri > 5.0;
     
     const tr = document.createElement('tr');
+    tr.dataset.id = item.id;
     if (isHighLoss) tr.className = 'high-loss';
     
-    const photoContent = item.imageUrl 
-      ? `<img src="${item.imageUrl}" class="table-thumbnail" alt="사진" onclick="openImageModal('${item.imageUrl}')">` 
-      : `<span class="no-photo">없음</span>`;
-
     tr.innerHTML = `
-      <td style="text-align: center;">
-        ${photoContent}
-      </td>
       <td>
         <div style="font-weight: 500; color: var(--text-primary);">${item.name}</div>
       </td>
       <td>
-        <div style="font-size: 0.75rem; color: var(--text-muted);">등록: ${item.startDate}</div>
-        <div style="font-size: 0.75rem; color: var(--text-muted);">${item.endDate ? '완료: ' + item.endDate : '-'}</div>
+        <div style="font-size: 0.75rem; color: var(--text-muted);">등록: ${formatDate(item.startDate)}</div>
+        <div style="font-size: 0.75rem; color: var(--text-muted);">${item.endDate ? '완료: ' + formatDate(item.endDate) : '-'}</div>
       </td>
       <td>
         <span class="badge" style="background-color: #F8FAFC; color: var(--text-secondary); border: 1px solid var(--border-color);">${item.goldType}</span>
@@ -442,8 +477,9 @@ const renderTableGeneric = (dataArray, tbody, currentPage, pageSize, paginationC
 
 // Render Main View Data
 const renderMainData = () => {
+  const sortedData = getSortedData(ledgerData);
   renderTableGeneric(
-    ledgerData,
+    sortedData,
     document.getElementById('ledger-body'),
     mainPage,
     mainPageSize,
@@ -502,8 +538,8 @@ document.getElementById('download-csv').addEventListener('click', () => {
     const { loss, heri } = calculateMetrics(item.initialWeight, item.final);
     const row = [
       `"${item.name}"`,
-      `"${item.startDate || ''}"`,
-      `"${item.endDate || ''}"`,
+      `"${formatDate(item.startDate)}"`,
+      `"${formatDate(item.endDate)}"`,
       `"${item.goldType}"`,
       item.expectedWeight,
       item.initialWeight,
@@ -537,8 +573,8 @@ document.getElementById('download-csv-stats').addEventListener('click', () => {
     const { loss, heri } = calculateMetrics(item.initialWeight, item.final);
     const row = [
       `"${item.name}"`,
-      `"${item.startDate || ''}"`,
-      `"${item.endDate || ''}"`,
+      `"${formatDate(item.startDate)}"`,
+      `"${formatDate(item.endDate)}"`,
       `"${item.goldType}"`,
       item.expectedWeight,
       item.initialWeight,
@@ -563,6 +599,8 @@ document.getElementById('download-csv-stats').addEventListener('click', () => {
 // Stats View Logic
 const getFilteredStatsData = () => {
   return ledgerData.filter(item => {
+    if (filterGoldTypeStats && item.goldType !== filterGoldTypeStats) return false;
+
     const targetDate = item[filterDateType];
     
     // If the target date (startDate or endDate) is not set, exclude it from search if dates are provided
@@ -581,8 +619,9 @@ const updateStatsView = () => {
   
   updateKPIsHelper(filteredData, 'stats');
   
+  const sortedData = getSortedData(filteredData);
   renderTableGeneric(
-    filteredData,
+    sortedData,
     document.getElementById('stats-ledger-body'),
     statsPage,
     statsPageSize,
@@ -595,6 +634,8 @@ document.getElementById('btn-search-stats').addEventListener('click', () => {
   filterDateType = document.getElementById('filter-date-type').value;
   filterStartDate = document.getElementById('filter-start-date').value;
   filterEndDate = document.getElementById('filter-end-date').value;
+  const goldTypeEl = document.getElementById('filter-gold-type');
+  filterGoldTypeStats = goldTypeEl ? goldTypeEl.value : '';
   statsPage = 1;
   updateStatsView();
 });
@@ -603,6 +644,30 @@ document.getElementById('stats-page-size').addEventListener('change', (e) => {
   statsPageSize = parseInt(e.target.value, 10);
   statsPage = 1;
   updateStatsView();
+});
+
+// Sorting Listeners
+document.querySelectorAll('th.sortable').forEach(th => {
+  th.addEventListener('click', () => {
+    const col = th.dataset.sort;
+    if (currentSortCol === col) {
+      currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
+    } else {
+      currentSortCol = col;
+      currentSortOrder = 'desc';
+    }
+    
+    document.querySelectorAll('th.sortable .sort-icon').forEach(icon => icon.textContent = '');
+    document.querySelectorAll(`th.sortable[data-sort="${col}"] .sort-icon`).forEach(icon => {
+      icon.textContent = currentSortOrder === 'asc' ? ' ▲' : ' ▼';
+    });
+    
+    if (viewStats.style.display === 'block') {
+      updateStatsView();
+    } else {
+      renderMainData();
+    }
+  });
 });
 
 // Make globals available

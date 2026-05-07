@@ -130,17 +130,7 @@
           </div>
           <div class="input-group design-name-group">
             <label for="designName">디자인 이름</label>
-            <div class="input-with-icon">
-              <input type="text" id="designName" required placeholder="예: 18K 골드 워치">
-              <label for="designPhoto" class="camera-btn" title="사진 추가">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-camera"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
-              </label>
-              <input type="file" id="designPhoto" accept="image/*" capture="environment" style="display: none;">
-            </div>
-            <div id="photoPreview" class="photo-preview hidden">
-              <img id="previewImg" src="" alt="미리보기">
-              <button type="button" id="removePhotoBtn" class="remove-photo-btn">×</button>
-            </div>
+            <input type="text" id="designName" required placeholder="예: 18K 골드 워치">
           </div>
           <div class="input-group">
             <label for="goldType">금 재질</label>
@@ -217,16 +207,15 @@
         <table class="data-table">
           <thead>
             <tr>
-              <th>사진</th>
-              <th>디자인 이름</th>
-              <th>일정 (등록/완료)</th>
-              <th>금 재질</th>
-              <th class="num-col">예상/초기 (g)</th>
-              <th class="num-col">주물 (g)</th>
-              <th class="num-col">세공 (g)</th>
-              <th class="num-col">최종 광택 (g)</th>
-              <th class="num-col highlight-col">총 손실 (g)</th>
-              <th class="num-col highlight-col">해리율 (%)</th>
+              <th class="sortable" data-sort="name">디자인 이름 <span class="sort-icon"></span></th>
+              <th class="sortable" data-sort="startDate">일정 (등록/완료) <span class="sort-icon"></span></th>
+              <th class="sortable" data-sort="goldType">금 재질 <span class="sort-icon"></span></th>
+              <th class="sortable num-col" data-sort="initialWeight">예상/초기 (g) <span class="sort-icon"></span></th>
+              <th class="sortable num-col" data-sort="casting">주물 (g) <span class="sort-icon"></span></th>
+              <th class="sortable num-col" data-sort="crafting">세공 (g) <span class="sort-icon"></span></th>
+              <th class="sortable num-col" data-sort="final">최종 광택 (g) <span class="sort-icon"></span></th>
+              <th class="sortable num-col highlight-col" data-sort="loss">총 손실 (g) <span class="sort-icon"></span></th>
+              <th class="sortable num-col highlight-col" data-sort="heri">해리율 (%) <span class="sort-icon"></span></th>
               <th>액션</th>
             </tr>
           </thead>
@@ -264,6 +253,15 @@
         <div class="input-group" style="flex: 1;">
           <label for="filter-end-date">종료일</label>
           <input type="date" id="filter-end-date">
+        </div>
+        <div class="input-group" style="width: 120px;">
+          <label for="filter-gold-type">금 재질</label>
+          <select id="filter-gold-type" style="padding: 0.625rem; border: 1px solid var(--border-color); border-radius: 6px; width: 100%;">
+            <option value="">전체</option>
+            <option value="18K">18K</option>
+            <option value="14K">14K</option>
+            <option value="순금">순금</option>
+          </select>
         </div>
         <button id="btn-search-stats" class="btn-primary" style="height: 42px;">검색</button>
       </div>
@@ -327,16 +325,15 @@
         <table class="data-table">
           <thead>
             <tr>
-              <th>사진</th>
-              <th>디자인 이름</th>
-              <th>일정 (등록/완료)</th>
-              <th>금 재질</th>
-              <th class="num-col">예상/초기 (g)</th>
-              <th class="num-col">주물 (g)</th>
-              <th class="num-col">세공 (g)</th>
-              <th class="num-col">최종 광택 (g)</th>
-              <th class="num-col highlight-col">총 손실 (g)</th>
-              <th class="num-col highlight-col">해리율 (%)</th>
+              <th class="sortable" data-sort="name">디자인 이름 <span class="sort-icon"></span></th>
+              <th class="sortable" data-sort="startDate">일정 (등록/완료) <span class="sort-icon"></span></th>
+              <th class="sortable" data-sort="goldType">금 재질 <span class="sort-icon"></span></th>
+              <th class="sortable num-col" data-sort="initialWeight">예상/초기 (g) <span class="sort-icon"></span></th>
+              <th class="sortable num-col" data-sort="casting">주물 (g) <span class="sort-icon"></span></th>
+              <th class="sortable num-col" data-sort="crafting">세공 (g) <span class="sort-icon"></span></th>
+              <th class="sortable num-col" data-sort="final">최종 광택 (g) <span class="sort-icon"></span></th>
+              <th class="sortable num-col highlight-col" data-sort="loss">총 손실 (g) <span class="sort-icon"></span></th>
+              <th class="sortable num-col highlight-col" data-sort="heri">해리율 (%) <span class="sort-icon"></span></th>
               <th>액션</th>
             </tr>
           </thead>
@@ -352,10 +349,5 @@
   
   <script src="app.js?v=2"></script>
 
-  <!-- Image Modal -->
-  <div id="imageModal" class="image-modal hidden">
-    <span class="close-modal">&times;</span>
-    <img class="modal-content" id="fullImage">
-  </div>
 </body>
 </html>
