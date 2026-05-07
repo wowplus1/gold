@@ -112,6 +112,7 @@ navToggleButton.addEventListener('click', () => {
     navToggleText.textContent = '메인으로 돌아가기';
     updateStatsView();
   }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 // Format helpers
 const formatNum = (num) => Number(num).toFixed(2);
@@ -263,6 +264,7 @@ function resetFormLocation() {
   const tableSection = document.querySelector('.table-section');
   
   if (formSection.parentNode !== originalContainer) {
+    formSection.classList.remove('inline-edit-mode');
     formSection.style.margin = '';
     formSection.style.boxShadow = '';
     formSection.style.border = '';
@@ -348,6 +350,7 @@ const editEntry = (id) => {
     editCell.style.padding = '0';
     editCell.style.backgroundColor = 'var(--bg-color)';
     
+    formSection.classList.add('inline-edit-mode');
     formSection.style.margin = '1rem';
     formSection.style.boxShadow = 'var(--shadow-md)';
     formSection.style.border = '2px solid var(--primary-color)';
