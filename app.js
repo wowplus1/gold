@@ -4,29 +4,49 @@
 const API_URL = 'https://script.google.com/macros/s/AKfycbwRa6_lGuqrUS6i8j8Ksrpe1afRpk5ILpAAfzt9Ro_rbLM-FBV11HkjcwpeULtlKJIYGg/exec';
 let ledgerData = [];
 
+let isFullyLoaded = false;
+let totalServerItems = 0;
+
 const loadData = async () => {
   // 1. Show cached data immediately to eliminate loading wait time
   const cachedData = localStorage.getItem('jewelryLedgerData');
   if (cachedData) {
     try {
       ledgerData = JSON.parse(cachedData);
+      isFullyLoaded = true;
       renderMainData();
     } catch(e) {
       console.error('Failed to parse cached data', e);
     }
   }
 
-  // 2. Fetch fresh data from server in the background
+  // 2. Fetch fresh initial data (100 items) from server
   try {
-    const res = await fetch(API_URL);
-    const data = await res.json();
-    if (data && data.length > 0) {
-      ledgerData = data;
+    const res = await fetch(`${API_URL}?action=read&limit=100&offset=0`);
+    const result = await res.json();
+    
+    // Check if result is our new paginated format
+    if (result && result.data) {
+      ledgerData = result.data;
+      totalServerItems = result.total;
+      renderMainData();
+      
+      if (totalServerItems > 100) {
+        fetchRemainingData(100, totalServerItems - 100);
+      } else {
+        isFullyLoaded = true;
+        localStorage.setItem('jewelryLedgerData', JSON.stringify(ledgerData));
+      }
+    } else if (Array.isArray(result) && result.length > 0) {
+      // Fallback for old format
+      ledgerData = result;
+      isFullyLoaded = true;
       localStorage.setItem('jewelryLedgerData', JSON.stringify(ledgerData));
+      renderMainData();
     } else {
       ledgerData = [];
+      renderMainData();
     }
-    renderMainData(); // Re-render silently with up-to-date data
   } catch (error) {
     console.error('Failed to load from server.', error);
     if (!ledgerData || ledgerData.length === 0) {
@@ -36,27 +56,45 @@ const loadData = async () => {
   }
 };
 
-const saveData = async () => {
+const fetchRemainingData = async (offset, limit) => {
+  try {
+    const res = await fetch(`${API_URL}?action=read&limit=${limit}&offset=${offset}`);
+    const result = await res.json();
+    if (result && result.data && result.data.length > 0) {
+      ledgerData = [...ledgerData, ...result.data];
+      isFullyLoaded = true;
+      localStorage.setItem('jewelryLedgerData', JSON.stringify(ledgerData));
+      
+      // Update UI with all data loaded
+      if (document.getElementById('view-stats').style.display === 'block') {
+        updateStatsView();
+      } else {
+        updateKPIs(); 
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load remaining data', error);
+  }
+};
+
+const syncAction = async (action, dataItem) => {
   try {
     // 1. Save locally instantly for fast UX
     localStorage.setItem('jewelryLedgerData', JSON.stringify(ledgerData));
     
     // 2. Background sync to Google Sheets
-    // Using text/plain is required to bypass CORS preflight with Google Apps Script
-    await fetch(`${API_URL}?action=bulk`, {
+    await fetch(`${API_URL}?action=${action}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'text/plain;charset=utf-8'
       },
-      body: JSON.stringify(ledgerData)
+      body: JSON.stringify(dataItem)
     });
   } catch (error) {
-    console.error('Failed to save to server', error);
+    console.error(`Failed to sync action: ${action}`, error);
   }
 };
 
-// Initiate Load
-loadData();
 
 let editingId = null;
 
@@ -118,7 +156,32 @@ navToggleButton.addEventListener('click', () => {
 const formatNum = (num) => Number(num).toFixed(2);
 const formatDate = (dateStr) => {
   if (!dateStr) return '';
-  return String(dateStr).split('T')[0].substring(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return String(dateStr).split('T')[0].substring(0, 10);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getTodayLocal = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getNowLocal = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const seconds = String(d.getSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 };
 
 // Calculate Loss and Heri
@@ -208,6 +271,7 @@ form.addEventListener('submit', async (e) => {
         crafting: parseFloat(inputCrafting.value),
         final: parseFloat(inputFinal.value)
       };
+      syncAction('update', ledgerData[index]);
     }
     editingId = null;
     
@@ -226,15 +290,14 @@ form.addEventListener('submit', async (e) => {
       casting: parseFloat(inputCasting.value),
       crafting: parseFloat(inputCrafting.value),
       final: parseFloat(inputFinal.value),
-      timestamp: new Date().toISOString()
+      timestamp: getNowLocal()
     };
     
-    ledgerData.unshift(newItem);
-  }
-  
-  saveData();
-  
-  resetFormLocation();
+      ledgerData.unshift(newItem);
+      syncAction('add', newItem);
+    }
+    
+    resetFormLocation();
   const cancelBtn = form.querySelector('.btn-cancel');
   if (cancelBtn) cancelBtn.remove();
   
@@ -284,7 +347,7 @@ function resetFormLocation() {
 function cancelEdit() {
   editingId = null;
   form.reset();
-  inputStartDate.value = new Date().toISOString().slice(0, 10);
+  inputStartDate.value = getTodayLocal();
   updatePreview();
   
   const btn = form.querySelector('.btn-primary');
@@ -381,7 +444,7 @@ const deleteEntry = (id) => {
   if (editingId === id) cancelEdit();
   if(confirm('이 데이터를 삭제하시겠습니까?')) {
     ledgerData = ledgerData.filter(item => item.id !== id);
-    saveData();
+    syncAction('delete', { id });
     renderMainData();
     if(viewStats.style.display === 'block') updateStatsView();
   }
@@ -558,7 +621,7 @@ document.getElementById('download-csv').addEventListener('click', () => {
   const encodedUri = encodeURI(csvContent);
   const link = document.createElement("a");
   link.setAttribute("href", encodedUri);
-  link.setAttribute("download", `jewelry_loss_data_${new Date().toISOString().slice(0,10)}.csv`);
+  link.setAttribute("download", `jewelry_loss_data_${getTodayLocal()}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -593,7 +656,7 @@ document.getElementById('download-csv-stats').addEventListener('click', () => {
   const encodedUri = encodeURI(csvContent);
   const link = document.createElement("a");
   link.setAttribute("href", encodedUri);
-  link.setAttribute("download", `jewelry_loss_stats_${new Date().toISOString().slice(0,10)}.csv`);
+  link.setAttribute("download", `jewelry_loss_stats_${getTodayLocal()}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -610,8 +673,10 @@ const getFilteredStatsData = () => {
     // If no dates are provided, we just want to ensure it has the target date type defined
     if (!targetDate) return false;
     
-    if (filterStartDate && targetDate < filterStartDate) return false;
-    if (filterEndDate && targetDate > filterEndDate) return false;
+    const targetDateStr = formatDate(targetDate);
+    
+    if (filterStartDate && targetDateStr < filterStartDate) return false;
+    if (filterEndDate && targetDateStr > filterEndDate) return false;
     
     return true;
   });
@@ -678,4 +743,7 @@ window.deleteEntry = deleteEntry;
 window.editEntry = editEntry;
 
 // Initial Render
-inputStartDate.value = new Date().toISOString().slice(0, 10);
+inputStartDate.value = getTodayLocal();
+
+// Initiate Load
+loadData();
