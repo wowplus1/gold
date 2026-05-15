@@ -1,11 +1,19 @@
-// Mock data generator removed to ensure real data usage
 
-// Backend Server Support
-const API_URL = 'https://script.google.com/macros/s/AKfycbwRa6_lGuqrUS6i8j8Ksrpe1afRpk5ILpAAfzt9Ro_rbLM-FBV11HkjcwpeULtlKJIYGg/exec';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCh9L9XKdIoomEGR7AdTY5SVXAI3KjrGok",
+  authDomain: "jewelry-loss-tracker.firebaseapp.com",
+  projectId: "jewelry-loss-tracker",
+  storageBucket: "jewelry-loss-tracker.firebasestorage.app",
+  messagingSenderId: "243248159640",
+  appId: "1:243248159640:web:e77e77be5519844cf529ed"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
 let ledgerData = [];
-
 let isFullyLoaded = false;
-let totalServerItems = 0;
 
 const loadData = async () => {
   // 1. Show cached data immediately to eliminate loading wait time
@@ -13,67 +21,45 @@ const loadData = async () => {
   if (cachedData) {
     try {
       ledgerData = JSON.parse(cachedData);
-      isFullyLoaded = true;
       renderMainData();
     } catch(e) {
       console.error('Failed to parse cached data', e);
     }
   }
 
-  // 2. Fetch fresh initial data (100 items) from server
+  // 2. Fetch fresh initial data from Firestore
   try {
-    const res = await fetch(`${API_URL}?action=read&limit=100&offset=0`);
-    const result = await res.json();
+    const querySnapshot = await db.collection("ledger").orderBy("id", "desc").get();
+    const serverData = [];
+    querySnapshot.forEach((doc) => {
+      serverData.push(doc.data());
+    });
     
-    // Check if result is our new paginated format
-    if (result && result.data) {
-      ledgerData = result.data;
-      totalServerItems = result.total;
-      renderMainData();
-      
-      if (totalServerItems > 100) {
-        fetchRemainingData(100, totalServerItems - 100);
-      } else {
-        isFullyLoaded = true;
-        localStorage.setItem('jewelryLedgerData', JSON.stringify(ledgerData));
+    // 파이어베이스가 처음이라 비어있고, 로컬에 기존 데이터가 남아있다면 모두 업로드(마이그레이션)
+    if (serverData.length === 0 && ledgerData.length > 0) {
+      console.log("Migrating existing data to Firestore...");
+      for (const item of ledgerData) {
+        await db.collection("ledger").doc(String(item.id)).set(item);
       }
-    } else if (Array.isArray(result) && result.length > 0) {
-      // Fallback for old format
-      ledgerData = result;
-      isFullyLoaded = true;
-      localStorage.setItem('jewelryLedgerData', JSON.stringify(ledgerData));
-      renderMainData();
     } else {
-      ledgerData = [];
-      renderMainData();
+      ledgerData = serverData;
+    }
+    
+    isFullyLoaded = true;
+    localStorage.setItem('jewelryLedgerData', JSON.stringify(ledgerData));
+    
+    renderMainData();
+    if (document.getElementById('view-stats').style.display === 'block') {
+      updateStatsView();
+    } else {
+      updateKPIs(); 
     }
   } catch (error) {
-    console.error('Failed to load from server.', error);
+    console.error('Failed to load from Firestore.', error);
     if (!ledgerData || ledgerData.length === 0) {
       ledgerData = [];
       renderMainData();
     }
-  }
-};
-
-const fetchRemainingData = async (offset, limit) => {
-  try {
-    const res = await fetch(`${API_URL}?action=read&limit=${limit}&offset=${offset}`);
-    const result = await res.json();
-    if (result && result.data && result.data.length > 0) {
-      ledgerData = [...ledgerData, ...result.data];
-      isFullyLoaded = true;
-      localStorage.setItem('jewelryLedgerData', JSON.stringify(ledgerData));
-      
-      // Update UI with all data loaded
-      if (document.getElementById('view-stats').style.display === 'block') {
-        updateStatsView();
-      } else {
-        updateKPIs(); 
-      }
-    }
-  } catch (error) {
-    console.error('Failed to load remaining data', error);
   }
 };
 
@@ -82,14 +68,12 @@ const syncAction = async (action, dataItem) => {
     // 1. Save locally instantly for fast UX
     localStorage.setItem('jewelryLedgerData', JSON.stringify(ledgerData));
     
-    // 2. Background sync to Google Sheets
-    await fetch(`${API_URL}?action=${action}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8'
-      },
-      body: JSON.stringify(dataItem)
-    });
+    // 2. Background sync to Firestore
+    if (action === 'add' || action === 'update') {
+      await db.collection("ledger").doc(String(dataItem.id)).set(dataItem);
+    } else if (action === 'delete') {
+      await db.collection("ledger").doc(String(dataItem.id)).delete();
+    }
   } catch (error) {
     console.error(`Failed to sync action: ${action}`, error);
   }
