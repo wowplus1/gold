@@ -289,7 +289,7 @@ form.addEventListener('submit', async (e) => {
   
   // Reset form and photo
   form.reset();
-  inputStartDate.value = new Date().toISOString().slice(0, 10);
+  inputStartDate.value = getTodayLocal();
   updatePreview();
   
   // Provide visual feedback
